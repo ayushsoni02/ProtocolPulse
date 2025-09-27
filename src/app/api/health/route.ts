@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uniswapClient, sushiswapClient, withRetry } from '@/lib/graphClient';
-import { 
-  GET_UNISWAP_SWAPS, 
-  GET_SUSHISWAP_SWAPS, 
-  getSevenDaysAgoTimestamp 
-} from '@/lib/queries';
+import { withRetry } from '@/lib/graphClient';
+import { getSevenDaysAgoTimestamp } from '@/lib/queries';
 import { HealthCalculator } from '@/lib/healthCalculator';
 import { SwapTransaction, HealthComparison, ProtocolHealth } from '@/lib/types';
 
 // Cache for 5 minutes
 const CACHE_DURATION = 5 * 60 * 1000;
 let cache: { data: HealthComparison; timestamp: number } | null = null;
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,28 +30,43 @@ export async function GET(request: NextRequest) {
 
     // Fetch data for each protocol
     for (const protocol of protocolList) {
-      if (protocol.trim() === 'uniswap') {
-        const uniswapSwaps = await fetchProtocolSwaps(
-          uniswapClient,
-          GET_UNISWAP_SWAPS,
-          sevenDaysAgoTimestamp,
-          'uniswap'
-        );
+      try {
+        if (protocol.trim() === 'uniswap') {
+          const uniswapSubgraphId = process.env.NEXT_PUBLIC_UNISWAP_SUBGRAPH_ID;
+          
+          if (!uniswapSubgraphId) {
+            throw new Error('Uniswap subgraph ID not configured. Please check your environment variables.');
+          }
+          
+          const uniswapSwaps = await fetchProtocolSwaps(
+            uniswapSubgraphId,
+            sevenDaysAgoTimestamp,
+            'uniswap'
+          );
+          
+          const calculator = new HealthCalculator();
+          healthComparison.uniswap = calculator.calculateProtocolHealth(uniswapSwaps, 'uniswap');
+        }
         
-        const calculator = new HealthCalculator();
-        healthComparison.uniswap = calculator.calculateProtocolHealth(uniswapSwaps, 'uniswap');
-      }
-      
-      if (protocol.trim() === 'sushiswap') {
-        const sushiswapSwaps = await fetchProtocolSwaps(
-          sushiswapClient,
-          GET_SUSHISWAP_SWAPS,
-          sevenDaysAgoTimestamp,
-          'sushiswap'
-        );
-        
-        const calculator = new HealthCalculator();
-        healthComparison.sushiswap = calculator.calculateProtocolHealth(sushiswapSwaps, 'sushiswap');
+        if (protocol.trim() === 'sushiswap') {
+          const sushiswapSubgraphId = process.env.NEXT_PUBLIC_SUSHISWAP_SUBGRAPH_ID;
+          
+          if (!sushiswapSubgraphId) {
+            throw new Error('SushiSwap subgraph ID not configured. Please check your environment variables.');
+          }
+          
+          const sushiswapSwaps = await fetchProtocolSwaps(
+            sushiswapSubgraphId,
+            sevenDaysAgoTimestamp,
+            'sushiswap'
+          );
+          
+          const calculator = new HealthCalculator();
+          healthComparison.sushiswap = calculator.calculateProtocolHealth(sushiswapSwaps, 'sushiswap');
+        }
+      } catch (protocolError) {
+        console.error(`Error processing ${protocol}:`, protocolError);
+        throw new Error(`Failed to fetch data for ${protocol}: ${protocolError instanceof Error ? protocolError.message : 'Unknown error'}`);
       }
     }
 
@@ -84,126 +96,76 @@ export async function GET(request: NextRequest) {
 }
 
 async function fetchProtocolSwaps(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  query: any,
-  timestamp: number,
+  subgraphId: string,
+  timestamp: string,
   protocol: 'uniswap' | 'sushiswap'
 ): Promise<SwapTransaction[]> {
-  // Check if we have a valid client (real data) or need to use mock data
-  if (!client) {
-    console.log(`Using mock data for ${protocol} (no Graph client available)`);
-    return generateRealisticMockSwaps(protocol);
+  const apiKey = process.env.NEXT_PUBLIC_GRAPH_API_KEY;
+  
+  if (!apiKey || !subgraphId) {
+    throw new Error(`Graph credentials not available for ${protocol}. Please check your API credentials.`);
   }
 
   return withRetry(async () => {
     try {
-      const { data } = await client.query({
-        query,
-        variables: { timestamp },
-        fetchPolicy: 'network-only'
+      const query = `
+        query GetSwaps($timestamp: String!) {
+          swaps(
+            where: { timestamp_gte: $timestamp }
+            orderBy: timestamp
+            orderDirection: desc
+            first: 1000
+          ) {
+            id
+            timestamp
+            sender
+            to
+            amountUSD
+          }
+        }
+      `;
+
+      const response = await fetch(`https://gateway-arbitrum.network.thegraph.com/api/subgraphs/id/${subgraphId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          query,
+          variables: { timestamp }
+        })
       });
 
-      console.log(`${protocol} API response:`, JSON.stringify(data, null, 2));
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-      // Handle different possible response structures
-      let swaps = [];
-      if (data && data.swaps) {
-        swaps = data.swaps;
-      } else if (data && data.data && data.data.swaps) {
-        swaps = data.data.swaps;
-      } else {
-        console.warn(`No swaps data found for ${protocol}:`, data);
-        console.log(`Falling back to mock data for ${protocol}`);
-        return generateRealisticMockSwaps(protocol);
+      const data = await response.json();
+      
+      if (data.errors) {
+        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+      }
+
+      const swaps = data.data?.swaps || [];
+
+      if (swaps.length === 0) {
+        throw new Error(`No recent swaps found for ${protocol}. The protocol may have low activity.`);
       }
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return swaps.map((swap: any) => ({
-        id: swap.id || `swap-${Date.now()}-${Math.random()}`,
-        timestamp: swap.timestamp || Math.floor(Date.now() / 1000).toString(),
-        user: swap.origin || swap.sender || swap.to || `0x${Math.random().toString(16).substr(2, 40)}`,
-        amountUSD: swap.amountUSD || swap.amount0USD || swap.amount1USD || '100',
-        gasUsed: swap.gasUsed || '100000',
+        id: swap.id,
+        timestamp: swap.timestamp.toString(),
+        recipient: swap.sender || swap.to, // Use recipient as the user field
+        amountUSD: swap.amountUSD || '0',
+        transaction: {
+          gasUsed: '0' // Gas data not available in this subgraph
+        },
         protocol
       }));
     } catch (error) {
-      console.error(`Error fetching ${protocol} data:`, error);
-      console.log(`Falling back to mock data for ${protocol}`);
-      // Return mock data for development/testing
-      return generateRealisticMockSwaps(protocol);
+      console.error(`${protocol} query error:`, error);
+      throw new Error(`Failed to query ${protocol} subgraph: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  });
-}
-
-// Generate realistic mock data that demonstrates proper health analysis
-function generateRealisticMockSwaps(protocol: 'uniswap' | 'sushiswap'): SwapTransaction[] {
-  const swaps: SwapTransaction[] = [];
-  const now = Date.now();
-  const fourteenDaysAgo = now - (14 * 24 * 60 * 60 * 1000);
-  
-  // Create realistic user patterns
-  const userPool: string[] = [];
-  for (let i = 0; i < 50; i++) {
-    userPool.push(`0x${Math.random().toString(16).substr(2, 40)}`);
-  }
-  
-  // Generate more swaps for uniswap (simulating higher activity)
-  const swapCount = protocol === 'uniswap' ? 800 : 600;
-  
-  for (let i = 0; i < swapCount; i++) {
-    const randomTime = fourteenDaysAgo + Math.random() * (now - fourteenDaysAgo);
-    
-    // Simulate user retention - some users make multiple transactions
-    const userIndex = Math.floor(Math.random() * userPool.length);
-    const user = userPool[userIndex];
-    
-    // Simulate realistic volume patterns
-    const baseAmount = protocol === 'uniswap' ? 5000 : 3000;
-    const randomAmount = (Math.random() * baseAmount + 100).toFixed(2);
-    
-    // Simulate realistic gas costs
-    const baseGas = protocol === 'uniswap' ? 120000 : 150000;
-    const randomGas = Math.floor(Math.random() * 30000 + baseGas);
-    
-    swaps.push({
-      id: `${protocol}-swap-${i}`,
-      timestamp: Math.floor(randomTime / 1000).toString(),
-      user: user,
-      amountUSD: randomAmount,
-      gasUsed: randomGas.toString(),
-      protocol
-    });
-  }
-  
-  return swaps;
-}
-
-// Generate mock data for development/testing (legacy function)
-function generateMockSwaps(protocol: 'uniswap' | 'sushiswap'): SwapTransaction[] {
-  const swaps: SwapTransaction[] = [];
-  const now = Date.now();
-  const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
-  
-  // Generate 50-100 mock swaps over the last 7 days
-  const swapCount = Math.floor(Math.random() * 50) + 50;
-  
-  for (let i = 0; i < swapCount; i++) {
-    const randomTime = sevenDaysAgo + Math.random() * (now - sevenDaysAgo);
-    const randomUser = `0x${Math.random().toString(16).substr(2, 40)}`;
-    const randomAmount = (Math.random() * 10000 + 100).toFixed(2);
-    const randomGas = Math.floor(Math.random() * 50000 + 50000);
-    
-    swaps.push({
-      id: `${protocol}-swap-${i}`,
-      timestamp: Math.floor(randomTime / 1000).toString(),
-      user: randomUser,
-      amountUSD: randomAmount,
-      gasUsed: randomGas.toString(),
-      protocol
-    });
-  }
-  
-  return swaps;
-}
+  }); 
+} 

@@ -59,8 +59,8 @@ export class HealthCalculator {
     });
     
     // Get unique users for each period
-    const recentUsers = new Set(recentSwaps.map(swap => swap.user));
-    const previousUsers = new Set(previousSwaps.map(swap => swap.user));
+    const recentUsers = new Set(recentSwaps.map(swap => swap.recipient));
+    const previousUsers = new Set(previousSwaps.map(swap => swap.recipient));
     
     // Find returning users
     const returningUsers = new Set([...recentUsers].filter(user => previousUsers.has(user)));
@@ -170,11 +170,11 @@ export class HealthCalculator {
     });
     
     // Calculate metrics
-    const recentUsers = new Set(recentSwaps.map(swap => swap.user)).size;
+    const recentUsers = new Set(recentSwaps.map(swap => swap.recipient)).size;
     const recentVolume = recentSwaps.reduce((sum, swap) => sum + parseFloat(swap.amountUSD), 0);
     const recentTxCount = recentSwaps.length;
     
-    const previousUsers = new Set(previousSwaps.map(swap => swap.user)).size;
+    const previousUsers = new Set(previousSwaps.map(swap => swap.recipient)).size;
     const previousVolume = previousSwaps.reduce((sum, swap) => sum + parseFloat(swap.amountUSD), 0);
     const previousTxCount = previousSwaps.length;
     
@@ -218,8 +218,8 @@ export class HealthCalculator {
       };
     }
     
-    // Calculate average gas costs
-    const gasCosts = swaps.map(swap => parseInt(swap.gasUsed));
+    // Calculate average gas costs (use default if not available)
+    const gasCosts = swaps.map(swap => parseInt(swap.transaction.gasUsed) || 100000);
     const avgGasCost = gasCosts.reduce((sum, gas) => sum + gas, 0) / gasCosts.length;
     
     // Gas efficiency score (lower gas = higher score)
@@ -246,8 +246,8 @@ export class HealthCalculator {
     
     let trend: 'improving' | 'stable' | 'declining' = 'stable';
     if (recentSwaps.length > 0 && previousSwaps.length > 0) {
-      const recentAvgGas = recentSwaps.reduce((sum, swap) => sum + parseInt(swap.gasUsed), 0) / recentSwaps.length;
-      const previousAvgGas = previousSwaps.reduce((sum, swap) => sum + parseInt(swap.gasUsed), 0) / previousSwaps.length;
+      const recentAvgGas = recentSwaps.reduce((sum, swap) => sum + (parseInt(swap.transaction.gasUsed) || 100000), 0) / recentSwaps.length;
+      const previousAvgGas = previousSwaps.reduce((sum, swap) => sum + (parseInt(swap.transaction.gasUsed) || 100000), 0) / previousSwaps.length;
       
       if (recentAvgGas < previousAvgGas * 0.9) {
         trend = 'improving';

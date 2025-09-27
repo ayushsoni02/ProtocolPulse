@@ -5,8 +5,7 @@ const uniswapSubgraphId = process.env.NEXT_PUBLIC_UNISWAP_SUBGRAPH_ID;
 const sushiswapSubgraphId = process.env.NEXT_PUBLIC_SUSHISWAP_SUBGRAPH_ID;
 
 if (!apiKey || !uniswapSubgraphId || !sushiswapSubgraphId) {
-  console.warn('Missing Graph Protocol credentials. Using mock data.');
-  // Fallback to mock data if credentials are missing
+  console.error('Missing Graph Protocol credentials. Please configure your API key and subgraph IDs.');
 }
 
 // Create HTTP links for both protocols with authentication
@@ -46,6 +45,8 @@ export const sushiswapClient = sushiswapHttpLink ? new ApolloClient({
     },
   },
 }) : null;
+
+// Clients created successfully
 
 // Retry logic wrapper
 export const withRetry = async <T>(

@@ -18,30 +18,24 @@ interface ChartDataPoint {
 }
 
 export default function TrendChart({ data, height = 300 }: TrendChartProps) {
-  // Generate mock trend data for the last 7 days
-  // In a real implementation, this would come from historical API data
+  // Note: Historical trend data would require additional API calls to fetch data for each day
+  // For now, we show the current health scores as a baseline
   const generateTrendData = (): ChartDataPoint[] => {
     const days = [];
     const today = new Date();
     
+    // Show current data point for the last 7 days
+    // In a production environment, you would make separate API calls for historical data
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       
-      // Generate realistic trend data based on current scores
-      const uniswapBase = data.uniswap.overallScore;
-      const sushiswapBase = data.sushiswap.overallScore;
-      
-      // Add some variance to simulate real trends
-      const uniswapVariance = (Math.random() - 0.5) * 10;
-      const sushiswapVariance = (Math.random() - 0.5) * 10;
-      
       days.push({
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        uniswapScore: Math.max(0, Math.min(100, uniswapBase + uniswapVariance)),
-        sushiswapScore: Math.max(0, Math.min(100, sushiswapBase + sushiswapVariance)),
-        uniswapVolume: Math.random() * 1000000 + 500000, // Mock volume data
-        sushiswapVolume: Math.random() * 800000 + 300000
+        uniswapScore: data.uniswap.overallScore,
+        sushiswapScore: data.sushiswap.overallScore,
+        uniswapVolume: 0, // Historical volume data would require additional API calls
+        sushiswapVolume: 0
       });
     }
     

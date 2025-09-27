@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client';
 
-// Query for Uniswap swaps from the last 7 days
+// Uniswap V3 query for Arbitrum
 export const GET_UNISWAP_SWAPS = gql`
-  query GetUniswapSwaps($timestamp: Int!) {
+  query GetUniswapSwaps($timestamp: BigInt!) {
     swaps(
       where: { timestamp_gte: $timestamp }
       orderBy: timestamp
@@ -11,16 +11,22 @@ export const GET_UNISWAP_SWAPS = gql`
     ) {
       id
       timestamp
-      origin
+      sender
+      recipient
       amountUSD
-      gasUsed
+      pool {
+        id
+      }
+      transaction {
+        id
+      }
     }
   }
 `;
 
-// Query for SushiSwap swaps from the last 7 days
+// Fixed SushiSwap query - using String instead of BigInt
 export const GET_SUSHISWAP_SWAPS = gql`
-  query GetSushiSwapSwaps($timestamp: Int!) {
+  query GetSushiSwapSwaps($timestamp: String!) {
     swaps(
       where: { timestamp_gte: $timestamp }
       orderBy: timestamp
@@ -29,14 +35,17 @@ export const GET_SUSHISWAP_SWAPS = gql`
     ) {
       id
       timestamp
-      origin
+      sender: from
+      to
       amountUSD
-      gasUsed
+      transaction {
+        id
+      }
     }
   }
 `;
 
-// Query for Uniswap daily aggregated data
+// Keep your existing daily stats queries but fix the naming
 export const GET_UNISWAP_DAILY_STATS = gql`
   query GetUniswapDailyStats($timestamp: Int!) {
     uniswapDayDatas(
@@ -52,7 +61,6 @@ export const GET_UNISWAP_DAILY_STATS = gql`
   }
 `;
 
-// Query for SushiSwap daily aggregated data
 export const GET_SUSHISWAP_DAILY_STATS = gql`
   query GetSushiSwapDailyStats($timestamp: Int!) {
     dayDatas(
@@ -68,14 +76,13 @@ export const GET_SUSHISWAP_DAILY_STATS = gql`
   }
 `;
 
-// Helper function to get timestamp for 7 days ago
-export const getSevenDaysAgoTimestamp = (): number => {
+// Keep your helper functions as they are
+export const getSevenDaysAgoTimestamp = (): string => {
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  return Math.floor(sevenDaysAgo.getTime() / 1000);
+  return Math.floor(sevenDaysAgo.getTime() / 1000).toString();
 };
 
-// Helper function to get timestamp for 14 days ago
 export const getFourteenDaysAgoTimestamp = (): number => {
   const fourteenDaysAgo = new Date();
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);

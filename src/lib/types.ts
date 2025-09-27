@@ -1,9 +1,11 @@
 export interface SwapTransaction {
   id: string;
   timestamp: string;
-  user: string;
+  recipient: string;
   amountUSD: string;
-  gasUsed: string;
+  transaction: {
+    gasUsed: string;
+  };
   protocol: 'uniswap' | 'sushiswap';
 }
 

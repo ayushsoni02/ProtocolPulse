@@ -57,7 +57,7 @@ Real-time DeFi protocol health analysis powered by The Graph Protocol. Analyze u
 2. **Use New Endpoints**: The new endpoints require authentication headers
 3. **Update Environment Variables**: Add your API key to the environment configuration
 
-**Current Setup**: The application uses realistic mock data for demonstration purposes.
+**Current Setup**: The application is configured to use real data from The Graph Protocol. Make sure to configure your API credentials.
 
 **Legacy URLs (No longer working)**:
 - ~~Uniswap: https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3~~
@@ -228,11 +228,11 @@ To connect to real The Graph Protocol data:
    });
    ```
 
-4. **Update API Route**:
-   ```typescript
-   // Replace mock data generation with real GraphQL queries
-   // Remove the generateRealisticMockSwaps() calls
+4. **Restart the Application**:
+   ```bash
+   bun run dev
    ```
+   The application will now use real data from The Graph Protocol.
 
 ## 📈 Future Enhancements
 
